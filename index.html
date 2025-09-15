@@ -335,13 +335,6 @@
                 <button id="logout-btn" class="btn">Logout</button>
             </header>
             <main class="container">
-                <form id="task-form">
-                    <input type="text" id="task-input" placeholder="Add a new task or goal..." required>
-                    <button type="submit" class="btn btn-primary">Add</button>
-                </form>
-                <ul id="task-list">
-                    <!-- Tasks will be rendered here -->
-                </ul>
             </main>
         </div>
     </div>
@@ -351,8 +344,7 @@
         {
             "imports": {
                 "firebase/app": "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js",
-                "firebase/auth": "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js",
-                "firebase/database": "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js"
+                "firebase/auth": "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js"
             }
         }
     </script>
@@ -397,22 +389,11 @@
             createUserWithEmailAndPassword,
             signOut
         } from "firebase/auth";
-        import {
-            getDatabase,
-            ref,
-            onValue,
-            push,
-            remove,
-            update,
-            serverTimestamp
-        } from "firebase/database";
 
         // --- Initialize Firebase ---
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const db = getDatabase(app);
         let currentUser = null;
-        let userTasksRef = null;
 
         // --- DOM Elements ---
         const landingContainer = document.getElementById('landing-container');
@@ -422,9 +403,6 @@
         const appContainer = document.getElementById('app-container');
         const userEmailSpan = document.getElementById('user-email');
         const logoutBtn = document.getElementById('logout-btn');
-        const taskForm = document.getElementById('task-form');
-        const taskInput = document.getElementById('task-input');
-        const taskList = document.getElementById('task-list');
 
         // Sign-in Screen
         const signinScreen = document.getElementById('signin-screen');
@@ -496,15 +474,10 @@
         onAuthStateChanged(auth, user => {
             if (user) {
                 currentUser = user;
-                userTasksRef = ref(db, `users/${currentUser.uid}/tasks`);
                 showAppView();
-                syncOfflineQueue();
-                loadTasks();
             } else {
                 currentUser = null;
-                userTasksRef = null;
                 showLandingView();
-                clearTasks();
             }
         });
 
@@ -546,180 +519,8 @@
             signOut(auth).catch(err => showAuthError(appContainer, err.message));
         });
 
-        // --- TASK MANAGEMENT ---
-        taskForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const taskText = taskInput.value.trim();
-            if (taskText) {
-                addTask(taskText);
-                taskInput.value = '';
-            }
-        });
-
-        function addTask(text) {
-            const task = {
-                text: text,
-                completed: false,
-                createdAt: new Date().toISOString()
-            };
-
-            if (!navigator.onLine) {
-                const offlineQueue = getOfflineQueue();
-                const tempId = `offline_${Date.now()}`;
-                task.id = tempId;
-                offlineQueue.push(task);
-                saveOfflineQueue(offlineQueue);
-                renderTask(tempId, task);
-                console.log("Task saved offline.");
-                return;
-            }
-
-            if (!userTasksRef) return;
-            task.createdAt = serverTimestamp();
-            push(userTasksRef, task).catch(err => showAuthError(taskForm, `Failed to add task: ${err.message}`));
-        }
-
-        function deleteTask(taskId) {
-            if (taskId.startsWith('offline_')) {
-                let queue = getOfflineQueue();
-                queue = queue.filter(task => task.id !== taskId);
-                saveOfflineQueue(queue);
-                document.querySelector(`[data-id="${taskId}"]`).remove();
-                return;
-            }
-            if (!currentUser) return;
-            const taskRef = ref(db, `users/${currentUser.uid}/tasks/${taskId}`);
-            remove(taskRef).catch(err => showAuthError(taskForm, `Failed to delete task: ${err.message}`));
-        }
-
-        function toggleTaskCompletion(taskId, completed) {
-            if (taskId.startsWith('offline_')) {
-                showAuthError(taskForm, "Cannot modify offline tasks until synced.");
-                const checkbox = document.querySelector(`[data-id="${taskId}"] input[type="checkbox"]`);
-                if(checkbox) checkbox.checked = !completed;
-                return;
-            }
-            if (!currentUser) return;
-            const taskRef = ref(db, `users/${currentUser.uid}/tasks/${taskId}`);
-            update(taskRef, { completed: completed }).catch(err => showAuthError(taskForm, `Failed to update task: ${err.message}`));
-        }
-
-        function clearTasks() {
-            taskList.innerHTML = '';
-        }
-
-        function renderTask(taskId, task) {
-            const taskItem = document.createElement('li');
-            taskItem.className = 'task-item';
-            taskItem.dataset.id = taskId;
-            if (task.completed) taskItem.classList.add('completed');
-            if (taskId.startsWith('offline_')) taskItem.style.opacity = '0.6';
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = task.completed;
-            checkbox.addEventListener('change', () => toggleTaskCompletion(taskId, checkbox.checked));
-
-            const span = document.createElement('span');
-            span.textContent = task.text;
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-btn';
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.addEventListener('click', () => deleteTask(taskId));
-
-            taskItem.appendChild(checkbox);
-            taskItem.appendChild(span);
-            taskItem.appendChild(deleteBtn);
-
-            taskList.prepend(taskItem);
-        }
-
-        // --- DATA SYNCING & OFFLINE ---
-        function getOfflineQueue() {
-            if (!currentUser) return [];
-            return JSON.parse(localStorage.getItem(`studyflow-offline-queue-${currentUser.uid}`) || '[]');
-        }
-
-        function saveOfflineQueue(queue) {
-            if (!currentUser) return;
-            localStorage.setItem(`studyflow-offline-queue-${currentUser.uid}`, JSON.stringify(queue));
-        }
-
-        function syncOfflineQueue() {
-            if (!navigator.onLine || !userTasksRef) return;
-            const queue = getOfflineQueue();
-            if (queue.length === 0) return;
-
-            console.log(`Syncing ${queue.length} offline tasks...`);
-            const promises = queue.map(task => {
-                const { id, ...taskData } = task;
-                taskData.createdAt = serverTimestamp();
-                return push(userTasksRef, taskData);
-            });
-
-            Promise.all(promises)
-                .then(() => {
-                    console.log("Offline queue synced successfully.");
-                    saveOfflineQueue([]);
-                })
-                .catch(err => showAuthError(taskForm, `Failed to sync offline tasks: ${err.message}`));
-        }
-
-        function loadTasks() {
-            const localTasks = loadTasksFromLocal();
-            if (localTasks) {
-                clearTasks();
-                Object.entries(localTasks).forEach(([id, task]) => renderTask(id, task));
-            }
-
-            if (userTasksRef) {
-                onValue(userTasksRef, snapshot => {
-                    if (!navigator.onLine) return;
-                    clearTasks();
-                    const tasks = snapshot.val();
-                    if (tasks) {
-                        Object.entries(tasks).forEach(([id, task]) => renderTask(id, task));
-                        saveTasksToLocal(tasks);
-                    } else {
-                        localStorage.removeItem(`studyflow-tasks-${currentUser.uid}`);
-                    }
-                    getOfflineQueue().forEach(task => renderTask(task.id, task));
-                }, error => {
-                    showAuthError(taskForm, error.message);
-                    console.error(error);
-                });
-            }
-        }
-
-        function saveTasksToLocal(tasks) {
-            if (!currentUser) return;
-            try {
-                localStorage.setItem(`studyflow-tasks-${currentUser.uid}`, JSON.stringify(tasks));
-            } catch (e) {
-                showAuthError(taskForm, "Could not save tasks locally.");
-                console.error(e);
-            }
-        }
-
-        function loadTasksFromLocal() {
-            if (!currentUser) return null;
-            try {
-                const tasks = localStorage.getItem(`studyflow-tasks-${currentUser.uid}`);
-                return tasks ? JSON.parse(tasks) : null;
-            } catch (e) {
-                showAuthError(taskForm, "Could not load local tasks.");
-                console.error(e);
-                return null;
-            }
-        }
-
         window.addEventListener('online', () => {
-            console.log("Back online. Syncing data...");
-            syncOfflineQueue();
-            if(userTasksRef) {
-                loadTasks();
-            }
+            console.log("Back online.");
         });
 
         window.addEventListener('offline', () => {
