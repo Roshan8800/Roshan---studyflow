@@ -327,13 +327,6 @@
     <div id="app" style="display: none;">
         <!-- Main App View -->
         <div id="app-container" style="display: none;">
-            <header>
-                <div>
-                    <h1>StudyFlow</h1>
-                    <span id="user-email"></span>
-                </div>
-                <button id="logout-btn" class="btn">Logout</button>
-            </header>
             <main class="container">
             </main>
         </div>
@@ -401,8 +394,6 @@
         const landingSignupBtn = document.getElementById('landing-signup-btn');
         const appDiv = document.getElementById('app');
         const appContainer = document.getElementById('app-container');
-        const userEmailSpan = document.getElementById('user-email');
-        const logoutBtn = document.getElementById('logout-btn');
 
         // Sign-in Screen
         const signinScreen = document.getElementById('signin-screen');
@@ -451,7 +442,6 @@
             signupScreen.style.display = 'none';
             appDiv.style.display = 'block';
             appContainer.style.display = 'block';
-            userEmailSpan.textContent = currentUser.email;
             document.body.classList.add('light-theme');
             document.body.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
         }
@@ -513,10 +503,6 @@
             }
             createUserWithEmailAndPassword(auth, email, password)
                 .catch(err => showAuthError(signupForm, err.message));
-        });
-
-        logoutBtn.addEventListener('click', () => {
-            signOut(auth).catch(err => showAuthError(appContainer, err.message));
         });
 
         window.addEventListener('online', () => {
